@@ -6,7 +6,7 @@
 
 > 点击“验证并保存网页登录凭据”只查询资源；点击“开始蹲守”后可能自动创建付费实例。关闭浏览器或停止本地工具，不会关闭已创建的云端实例。
 
-[快速开始](#快速开始) · [登录配置](#登录配置) · [使用方法](#使用方法) · [常见问题](#常见问题) · [验证范围](#验证范围) · [提交问题](https://github.com/cchao-jlu/autodl-gpu/issues)
+[快速开始](#快速开始) · [登录配置](#登录配置) · [使用方法](#使用方法) · [常见问题](#常见问题) · [提交问题](https://github.com/cchao-jlu/autodl-gpu/issues)
 
 ## 功能与修复
 
@@ -17,7 +17,7 @@
 | 镜像选择 | 适配基础镜像、社区镜像和我的镜像的列表接口 |
 | 基础镜像标识 | 使用镜像 UUID 解析与构造创建参数，避免旧树形镜像接口失效 |
 | Windows 启动 | 独立虚拟环境、后台启动/停止脚本、UTF-8 日志及合法备份文件名 |
-| 实例选项 | 保留数据盘扩容、克隆实例、定时关机和邮件通知功能；验证范围见下文 |
+| 实例选项 | 数据盘扩容、克隆实例、定时关机和邮件通知 |
 | 本地访问 | Web 服务默认仅监听 `127.0.0.1`，不创建 Gradio 公共分享链接 |
 
 ## 快速开始
@@ -91,6 +91,10 @@ PYTHONUTF8=1 GRADIO_ANALYTICS_ENABLED=False .venv/bin/python app.py
 4. 打开 **Headers / 标头 → Request Headers / 请求标头**，复制 **Authorization 的完整值**。
 5. 粘贴到本地页面的“网页登录凭据”，点击 **验证并保存网页登录凭据**。
 
+![在浏览器 Network 面板找到 Authorization，并粘贴到本地工具](docs/screenshots/guide-auth.png)
+
+*凭据获取操作示意；图中使用占位符。*
+
 也可以在 **Application / 应用 → Local Storage / 本地存储 → https://www.autodl.com** 下找到 `token`，复制其 Value。只复制值，不要包含字段名、引号或整段请求。
 
 验证过程会查询地区、GPU 和普通实例列表。全部成功后才保存新凭据；验证失败时保留原配置。凭据过期后，需要重新登录官网并再次复制，刷新本地页面不会自动更新凭据。
@@ -109,11 +113,19 @@ PYTHONUTF8=1 GRADIO_ANALYTICS_ENABLED=False .venv/bin/python app.py
 
 ## 使用方法
 
+![配置显卡、地区、GPU 数量、镜像和定时关机](docs/screenshots/guide-overview.png)
+
+*当前版本界面，使用演示数据。图中的库存和配置仅用于说明操作。*
+
 1. **选择 GPU 和地区**：勾选显卡型号与地区，指定每台 GPU 数量以及目标主机数量。
 2. **选择启动镜像**：基础镜像会显示框架、Python、CUDA/运行时及硬件架构。请按目标 GPU 和软件要求选择兼容镜像。
 3. **检查实例选项**：按需设置磁盘扩容、克隆、定时关机和邮件通知。本机运行时，“守到后将 Hunter 关机”保持“不关机”。
 4. **开始蹲守**：默认间隔为 30 秒。点击按钮后，程序会保存设置、查询符合条件的主机并尝试创建实例。
 5. **查看与停止**：页面显示蹲守日志；点击“停止”可停止后续扫描。已发出的请求可能仍在处理，请在 AutoDL 控制台确认实例状态。
+
+![基础镜像选项中的框架、Python、系统、CUDA 与硬件架构说明](docs/screenshots/guide-images.png)
+
+*镜像选择示例：核对框架、Python、CUDA 与硬件架构后，再开始蹲守。*
 
 网络请求失败时，程序不会自动重发创建请求。遇到异常请先检查官网实例列表，再决定是否重新开始，避免重复租用。
 
@@ -137,41 +149,7 @@ PYTHONUTF8=1 GRADIO_ANALYTICS_ENABLED=False .venv/bin/python app.py
 - `runtime/logs/output.log`：页面使用的蹲守日志。
 - `runtime/logs/main.log`：详细调试日志，提交问题前先脱敏。
 
-## 验证范围
-
-截至 **2026-11-10**，在 Windows / Python 3.11 环境中完成：
-
-- 本地安装、启动、停止，以及首页、配置接口和表单加载验证。
-- 使用有效网页登录凭据查询地区、GPU 和普通实例列表。
-- 基础镜像、私有镜像、社区镜像查询及所选镜像解析。
-- 13 项自动化回归测试，覆盖登录保存/失败/退出、错误信息脱敏、镜像 UUID 与创建参数映射等行为。
-
-**尚未进行真实付费创建、克隆、定时关机或邮件发送的端到端验证。** 创建参数通过模拟请求验证。项目依赖 AutoDL 网页接口，接口和返回格式可能变化，不保证持续兼容或一定能抢到库存。
-
-测试命令（使用模拟请求，不租用 GPU）：
-
-```powershell
-.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py" -v
-```
-
-## 项目结构
-
-```text
-app.py                       Gradio 页面与操作回调
-main.py                      运行目录、日志与命令行入口
-gpuhunter/autodl_client.py    AutoDL 请求、镜像解析与实例操作
-gpuhunter/commands/wait.py    库存扫描与创建流程
-gpuhunter/data_object.py      本地配置与地区数据
-requirements-local.txt       兼容依赖约束
-requirements-local.lock.txt  已验证环境的版本快照
-start-local.cmd              Windows 一键启动
-stop-local.cmd               Windows 一键停止
-local-server.ps1             Windows 后台服务管理
-tests/                       无需账号的回归测试
-runtime/                     本地配置、状态与日志，不提交到 Git
-```
-
-更多 Windows 操作说明见 [LOCAL-SETUP.md](LOCAL-SETUP.md)。历史界面图片保留在 `docs/screenshots/`，其登录方式与当前版本不同，以本 README 为准。
+更多 Windows 操作说明见 [LOCAL-SETUP.md](LOCAL-SETUP.md)。
 
 ## 上游与许可证
 
