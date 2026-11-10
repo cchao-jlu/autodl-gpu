@@ -1,3 +1,1 @@
-from gpuhunter.utils.logging import get_logger
-
-logger = get_logger(__name__)
+"""Regression tests; importing the package has no logging side effects."""

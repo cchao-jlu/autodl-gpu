@@ -1,1 +1,5 @@
-如果需要，此处以后会补充内容。 If necessary, additional content will be added here in the future.
+# 文档资源
+
+安装、网页登录与故障排查请阅读仓库根目录的 [README](../README.md)。
+
+`monkey.png` 和 `screenshots/` 保留自上游项目。历史截图中的“开发者 Token”登录方式已被本仓库的网页登录凭据方案替换，不应作为当前操作指南。

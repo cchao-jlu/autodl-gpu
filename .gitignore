@@ -93,3 +93,8 @@ GitHub.sublime-settings
 !.vscode/launch.json
 !.vscode/extensions.json
 .history
+
+# Local credentials, generated state, and logs
+runtime/data/*.json
+runtime/data/*.state
+runtime/logs/

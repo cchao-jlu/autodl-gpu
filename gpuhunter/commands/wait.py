@@ -53,7 +53,8 @@ def try_to_create_instances():
     region_list = RegionList().update()
     region_sign_list = [s for r in region_list.list if r["region_name"] in config.region_names
                         for s in r["region_sign"]]
-    logger.debug(f"config: {config.to_dict()!r}")
+    logger.debug("hunting config: regions=%r, gpu_types=%r, instance_num=%r",
+                 config.region_names, config.gpu_type_names, config.instance_num)
     logger.debug(f"region_list.list: {region_list.to_dict()!r}")
 
     # 如果有克隆目标，确保使用同区域的机器
@@ -74,6 +75,7 @@ def try_to_create_instances():
     # 获取镜像
     image_info = resolve_image_info(
         base_image_labels=config.base_image_labels,
+        base_image_uuid=config.base_image_uuid,
         shared_image_keyword=config.shared_image_keyword,
         shared_image_username_keyword=config.shared_image_username_keyword,
         shared_image_version=config.shared_image_version,
@@ -85,7 +87,8 @@ def try_to_create_instances():
     instances = get_running_instances(
         region_names=config.region_names,
         gpu_type_names=config.gpu_type_names,
-        image=image_info["image"],
+        image=image_info["image"] or None,
+        base_image_uuid=image_info["base_image_uuid"],
         private_image_uuid=image_info["private_image_uuid"],
         reproduction_uuid=image_info["reproduction_uuid"],
         reproduction_id=image_info["reproduction_id"]
@@ -127,6 +130,7 @@ def try_to_create_instances():
                     instance_uuid = autodl_client.create_instance(
                         machine["machine_id"],
                         image_info["image"],
+                        base_image_uuid=image_info["base_image_uuid"],
                         private_image_uuid=image_info["private_image_uuid"],
                         reproduction_uuid=image_info["reproduction_uuid"],
                         reproduction_id=image_info["reproduction_id"],
@@ -153,7 +157,9 @@ def try_to_create_instances():
                     logger.info(f"已创建实例：{instance_name}。"
                                 f" Instance has been created: {instance_name}.")
                     created_instance_names.append(instance_name)
-                except FailedError:
+                except FailedError as exc:
+                    if exc.code in ("AuthorizeFailed", "MissingWebToken"):
+                        raise
                     logger.error(f'{machine["region_name"]} {machine["machine_alias"]} {machine["gpu_name"]}'
                                  f' ({machine["machine_id"]})')
                     logger.error(f"使用以上机器创建实例时发生错误，跳过并继续..."

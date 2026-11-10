@@ -1,0 +1,6 @@
+-r requirements.txt
+# Gradio 4.19.2 imports HfFolder, removed in huggingface_hub 1.x.
+huggingface_hub<1
+# Preserve the template API and JSON schema format used by Gradio 4.19.2.
+fastapi==0.112.4
+pydantic==2.10.6

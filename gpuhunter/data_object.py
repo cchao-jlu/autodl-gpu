@@ -51,12 +51,14 @@ class DataObjectMixin:
 
 class Config(DataObjectMixin):
     token = ""
+    web_token = ""
     region_names = []
     gpu_type_names = []
     gpu_idle_num = 1
     instance_num = 1
     image_category = ""
     base_image_labels = None
+    base_image_uuid = ""
     shared_image_keyword = ""
     shared_image_username_keyword = ""
     shared_image_version = ""
@@ -82,20 +84,22 @@ class Config(DataObjectMixin):
 class RegionList(DataObjectMixin):
     list = []
 
-    def fetch(self):
+    def fetch(self, client=None):
         from gpuhunter.autodl_client import autodl_client
-        self.list = []
-        for r in autodl_client.get_regions():
-            self.list.append({
+        client = client or autodl_client
+        regions = []
+        for r in client.get_regions():
+            regions.append({
                 **r,
                 "gpu_types": [
                     {
                         "gpu_type": next(iter(g.keys())),
                         **next(iter(g.values())),
                     }
-                    for g in autodl_client.get_region_gpu_types(r["region_sign"])
+                    for g in client.get_region_gpu_types(r["region_sign"])
                 ]
             })
+        self.list = regions
 
     def get_gpu_type_names(self):
         return [s["gpu_type"] for s in self.get_gpu_stats()]

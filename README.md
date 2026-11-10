@@ -1,192 +1,180 @@
-<!-- Thanks to https://github.com/othneildrew/Best-README-Template -->
+# AutoDL GPU Hunter
 
-<a name="readme-top"></a>
-<div align="center">
-  <a href="https://github.com/mfznttkx/autodl-gpuhunter/graphs/contributors"><img src="https://img.shields.io/github/contributors/mfznttkx/autodl-gpuhunter.svg?style=for-the-badge" alt="Contributors"/></a>
-  <a href="https://github.com/mfznttkx/autodl-gpuhunter/network/members"><img src="https://img.shields.io/github/forks/mfznttkx/autodl-gpuhunter.svg?style=for-the-badge" alt="Forks"/></a>
-  <a href="https://github.com/mfznttkx/autodl-gpuhunter/stargazers"><img src="https://img.shields.io/github/stars/mfznttkx/autodl-gpuhunter.svg?style=for-the-badge" alt="Stargazers"/></a>
-  <a href="https://github.com/mfznttkx/autodl-gpuhunter/issues"><img src="https://img.shields.io/github/issues/mfznttkx/autodl-gpuhunter.svg?style=for-the-badge" alt="Issues"/></a>
-  <a href="https://github.com/mfznttkx/autodl-gpuhunter/blob/master/LICENSE.txt"><img src="https://img.shields.io/github/license/mfznttkx/autodl-gpuhunter.svg?style=for-the-badge" alt="License"/></a>
-</div>
+面向 **AutoDL 普通容器实例**的 GPU 蹲守工具。通过本地 Gradio 页面选择显卡、地区和镜像，定时查询库存，并在满足条件时尝试创建按量付费实例。
 
-<div align="center">
-    <br/><br/>
-  <a href="https://github.com/mfznttkx/autodl-gpuhunter"><img src="./docs/monkey.png" alt="monkey" height="100" /></a>
+本仓库在上游项目基础上修复了普通实例登录、镜像接口和 Windows 本地运行问题。**适配普通实例；未实现 Pro 实例流程。**
 
-  <h3 align="center">
-    GPU Hunter for
-    <a href="https://www.autodl.com/">AutoDL.com</a>
-  </h3>
+> 点击“验证并保存网页登录凭据”只查询资源；点击“开始蹲守”后可能自动创建付费实例。关闭浏览器或停止本地工具，不会关闭已创建的云端实例。
 
-  <p align="center">
-    这是一个帮你蹲守 AutoDL.com 显卡主机的工具。
-    <br />
-    This tool helps you reserve GPU machines on AutoDL.com.
-    <br />
-    <a href="#getting-started"><strong>快速入门 (Getting Started) »</strong></a>
-    <br />
-    <br />
-    <a href="https://github.com/mfznttkx/autodl-gpuhunter/issues">反馈问题 (Report Bug)</a>
-    ·
-    <a href="https://github.com/mfznttkx/autodl-gpuhunter/issues">功能需求 (Request Feature)</a>
-    ·
-    <a href="https://github.com/mfznttkx/autodl-gpuhunter">注意事项 (Important Notes)</a>
-  </p>
-</div>
+[快速开始](#快速开始) · [登录配置](#登录配置) · [使用方法](#使用方法) · [常见问题](#常见问题) · [验证范围](#验证范围) · [提交问题](https://github.com/cchao-jlu/autodl-gpu/issues)
 
-## 关于项目 (About The Project)
+## 功能与修复
 
-每当遇上 AutoDL.com 没卡的时候只能焦急地等待在电脑前，真不知道该去唱歌还是蹦迪。
-这种情况，有一个自己的“卡蹲蹲”就十分必要了！拥有了这个工具，再也不会有意外的休息日，每天都有 996 的充实感！
+| 项目 | 说明 |
+| --- | --- |
+| GPU 蹲守 | 按显卡型号、地区、每台 GPU 数量及目标主机数量筛选，定时查询库存 |
+| 普通实例登录 | 使用官网网页登录凭据；验证成功后保存，鉴权失败时给出明确提示 |
+| 镜像选择 | 适配基础镜像、社区镜像和我的镜像的列表接口 |
+| 基础镜像标识 | 使用镜像 UUID 解析与构造创建参数，避免旧树形镜像接口失效 |
+| Windows 启动 | 独立虚拟环境、后台启动/停止脚本、UTF-8 日志及合法备份文件名 |
+| 实例选项 | 保留数据盘扩容、克隆实例、定时关机和邮件通知功能；验证范围见下文 |
+| 本地访问 | Web 服务默认仅监听 `127.0.0.1`，不创建 Gradio 公共分享链接 |
 
-此工具使用尊贵的 Gradio 框架为你打造了简单易用的 UI 界面，让你在不想敲命令行的时候可以优雅地按下鼠标即可启动，接下来小猴子会立马为你开始蹲守！而你该去唱歌就去唱歌，该去蹦迪就去蹦迪。
-等发现空闲的 GPU 主机后，小猴子会立即帮你拿下，并且还会发邮件通知你回来工作！甚至连自动关机的时间都帮你设定好了。
+## 快速开始
 
-### 所以，为什么需要这个工具 (Why)
+### 环境
 
-* 急需 GPU！甚至比现在占用着全部 GPU 的那帮人更需要
-* 需要一个手速飞快的猴子，帮我一直盯着随时都可能空闲出来的 GPU
-* 抢到以后，要根据我的亿点点要求创建好直接能用的实例
-* 我绝对不可能为这事花一毛钱
+- 推荐 **Python 3.11**，本地安装不需要 GPU 或 CUDA。
+- Git，以及能够访问 GitHub、Python 包源和 AutoDL 的网络。
+- Windows 本地启动流程已验证。Linux/macOS 可按下方方式直接运行 Python，尚未在本仓库中实机验证。
 
-### 界面截图 (Screenshots)
+### Windows / PowerShell
 
-![gpu-hunter-main-ui.jpg](docs%2Fscreenshots%2Fgpu-hunter-main-ui.jpg)
-![gpu-hunter-stat-ui.jpg](docs%2Fscreenshots%2Fgpu-hunter-stat-ui.jpg)
-<table>
-  <tr>
-  <td>
-    <img src="./docs/screenshots/gpu-hunter-more-config-01.jpg" alt="more-config-01"/>
-  </td>
-  <td>
-    <img src="./docs/screenshots/gpu-hunter-more-config-02.jpg" alt="more-config-02"/>
-  </td>
-  </tr>
-</table>
+已安装 Python 3.11 时：
 
-<p align="right">(<a href="#readme-top">⬆️ TOP</a>)</p>
+```powershell
+git clone https://github.com/cchao-jlu/autodl-gpu.git
+cd autodl-gpu
+py -3.11 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements-local.lock.txt
+.\start-local.cmd
+```
 
-<a name="features"></a>
+使用 `uv` 时，可用以下命令替代创建环境和安装依赖的步骤：
 
-## 功能特点 (Features)
+```powershell
+uv venv --python 3.11 .venv
+uv pip install --python .venv\Scripts\python.exe -r requirements-local.lock.txt
+.\start-local.cmd
+```
 
-* **持续高效地帮你蹲守 GPU**
-  * 启动后持续扫描，不用人工刷新
-  * 发现空闲的 GPU 主机后立即拿下
-* **丰富的选项支持多种需求**
-  * 显卡型号、地区、GPU 个数、租用数量
-  * 启动镜像 (基础镜像、社区镜像、我的镜像)
-  * 数据盘扩容、克隆现有实例、定时关机、邮件通知
-* **用起来简简单单**
-  * 常见的 Python 环境即可安装，同时支持容器化部署
-  * 打一条命令即可启动，按一个按钮开始蹲守 (小学生都会)
-  * 基于 Gradio 界面的纯 Python 应用，但凡会炼模型的人都能再开发
-* **开源免费**
-  * 祝你用得开心
-  * 如果你增加了新功能，别忘了可以通过 [提交PR](https://github.com/mfznttkx/autodl-gpuhunter/pulls) 分享给大家，谢谢！
+启动成功后打开 **http://127.0.0.1:7860**。之后可直接双击：
 
-<p align="right">(<a href="#readme-top">⬆️ TOP</a>)</p>
+| 文件 | 用途 |
+| --- | --- |
+| `start-local.cmd` | 启动后台服务并打开浏览器；已运行时复用该服务 |
+| `stop-local.cmd` | 停止由脚本启动的本地服务 |
+| `local-server.ps1` | 检查端口、管理进程并等待服务就绪 |
 
+需要在终端查看输出时，也可以直接运行：
 
-<a name="getting-started"></a>
+```powershell
+$env:PYTHONUTF8 = '1'
+$env:GRADIO_ANALYTICS_ENABLED = 'False'
+.\.venv\Scripts\python.exe app.py
+```
 
-## 快速入门 (Getting Started)
+直接运行的进程使用 `Ctrl+C` 停止。不要与后台启动脚本同时运行多个蹲守进程。
 
-下面演示了如何在本地配置这个项目，如需本地运行，请按照以下示例步骤操作。如果你熟悉 Docker，还可以制作成镜像并放到
-AutoDL.com 或其它服务器上作为容器运行。
+### Linux / macOS
 
-### 环境需求 (Prerequisites)
+```bash
+git clone https://github.com/cchao-jlu/autodl-gpu.git
+cd autodl-gpu
+python3.11 -m venv .venv
+.venv/bin/python -m pip install -r requirements-local.txt
+PYTHONUTF8=1 GRADIO_ANALYTICS_ENABLED=False .venv/bin/python app.py
+```
 
-* [Python 3.8 或更高版本](https://www.python.org/downloads/)
-* [venv](https://docs.python.org/3/library/venv.html) (可选)
+`requirements-local.lock.txt` 保存 Windows / Python 3.11 已验证环境的完整版本；`requirements-local.txt` 提供兼容约束。请勿仅安装原始 `requirements.txt`，以免旧版 Gradio 与新版间接依赖发生冲突。
 
-### 安装步骤 (Installation)
+## 登录配置
 
-在本地安装和配置这个项目的详细步骤如下，但这些步骤只介绍通用的系统和环境的情况，如果你的系统或环境比较特殊，或者使用了
-venv，可以根据情况自己灵活处理。
+### 使用网页登录凭据
 
-1. 使用 git 克隆本仓库（或者[下载压缩包](https://github.com/mfznttkx/autodl-gpuhunter/archive/refs/heads/main.zip)）
-   ```sh
-   git clone https://github.com/mfznttkx/autodl-gpuhunter
-   ```
-2. 进入项目根目录
-   ```sh
-   cd autodl-gpuhunter
-   ```
-3. 使用 pip 命令安装依赖的库
-   ```sh
-   pip install -r requirements.txt
-   ```
-4. 启动服务
-   ```sh
-   python app.py
-   ```
+**当前普通实例接口使用网页登录凭据，开发者 Token 无法替代它。**
 
-执行启动服务的命令后，即可从输出的信息中看到服务的网址：[http://127.0.0.1:7860](http://127.0.0.1:7860)，打开该网址即可进入 UI 界面。
+1. 在浏览器登录 [AutoDL 控制台](https://www.autodl.com/console/instance/list)。
+2. 按 **F12** 或 **Ctrl+Shift+I** 打开开发者工具，选择 **Network / 网络 → Fetch/XHR**，刷新页面。
+3. 选中请求地址为 `https://www.autodl.com/api/v1/instance` 的请求。
+4. 打开 **Headers / 标头 → Request Headers / 请求标头**，复制 **Authorization 的完整值**。
+5. 粘贴到本地页面的“网页登录凭据”，点击 **验证并保存网页登录凭据**。
 
-<p align="right">(<a href="#readme-top">⬆️ TOP</a>)</p>
+也可以在 **Application / 应用 → Local Storage / 本地存储 → https://www.autodl.com** 下找到 `token`，复制其 Value。只复制值，不要包含字段名、引号或整段请求。
 
+验证过程会查询地区、GPU 和普通实例列表。全部成功后才保存新凭据；验证失败时保留原配置。凭据过期后，需要重新登录官网并再次复制，刷新本地页面不会自动更新凭据。
 
-<a name="usage"></a>
+### 凭据保存位置
 
-## 使用方法 (Usage)
+配置以明文保存在本机 `runtime/data/config.json`：
 
-### 1. 设置开发者 Token
+| 字段 | 用途 |
+| --- | --- |
+| `web_token` | 普通实例的网页登录凭据 |
+| `token` | 从旧版本保留的开发者 Token，不参与当前普通实例请求 |
+| `mail_smtp_password` | 可选的邮箱发信密码或授权码 |
 
-首次使用时，需要你先登录 [AutoDL.com 控制台](https://www.autodl.com/console/center/settings/token) 获取你的**开发者 Token**
-，然后回来按提示填入并点击“确定”。
-此工具会将此 Token 临时保存在本地，以方便日常使用，你可以随时清除（请关注[注意事项](#important-notes)）。
+不要公开配置文件、请求标头或包含凭据的截图。页面“退出”只清除本地的 `web_token`，不会注销官网会话，也不会清除旧 Token 和邮件设置。`runtime/` 中的运行数据与日志已加入 Git 忽略规则。
 
-### 2. 开始蹲守
+## 使用方法
 
-1. 根据实际需要选择要蹲守的显卡型号、地区
-2. 设置启动镜像、扩容数据盘、克隆实例，以及定时关机和邮件通知等
-3. 按下“开始蹲守”按钮
+1. **选择 GPU 和地区**：勾选显卡型号与地区，指定每台 GPU 数量以及目标主机数量。
+2. **选择启动镜像**：基础镜像会显示框架、Python、CUDA/运行时及硬件架构。请按目标 GPU 和软件要求选择兼容镜像。
+3. **检查实例选项**：按需设置磁盘扩容、克隆、定时关机和邮件通知。本机运行时，“守到后将 Hunter 关机”保持“不关机”。
+4. **开始蹲守**：默认间隔为 30 秒。点击按钮后，程序会保存设置、查询符合条件的主机并尝试创建实例。
+5. **查看与停止**：页面显示蹲守日志；点击“停止”可停止后续扫描。已发出的请求可能仍在处理，请在 AutoDL 控制台确认实例状态。
 
-以上设置会自动保存，所以通常只需直接按下“开始蹲守”即可！
+网络请求失败时，程序不会自动重发创建请求。遇到异常请先检查官网实例列表，再决定是否重新开始，避免重复租用。
 
-<p align="right">(<a href="#readme-top">⬆️ TOP</a>)</p>
+## 常见问题
 
+| 问题 | 处理方式 |
+| --- | --- |
+| 开发者 Token 正确，仍提示登录失败 | 请使用官网请求头中的网页登录凭据，见[登录配置](#登录配置) |
+| 登录凭据过期 | 重新登录官网，重新获取 Authorization，再在本地验证 |
+| 基础镜像出现红色“错误” | 更新代码和兼容依赖，重启服务并按 `Ctrl+F5` 刷新；当前版本已替换旧 `/image/all` 接口 |
+| `HfFolder` 导入失败，或首页出现 Gradio/FastAPI 异常 | 在独立环境中按本仓库锁定文件重新安装依赖 |
+| 7860 端口被占用 | 使用 `stop-local.cmd` 停止本工具的后台服务；若被其他程序占用，先处理该程序 |
+| 网页打开了，但不出现新功能 | 重启本地服务并强制刷新浏览器 |
+| 显卡空闲数量为 0 | 当前查询没有空闲库存；工具只能持续查询，无法保证抢到资源 |
+| 关闭浏览器后仍在运行 | 后台服务独立运行，使用 `stop-local.cmd` 停止；云端实例需在 AutoDL 控制台单独管理 |
 
-<a name="important-notes"></a>
+后台启动日志：
 
-## 注意事项 (Important Notes)
+- `runtime/logs/web.stdout.log`：服务标准输出。
+- `runtime/logs/web.stderr.log`：启动错误和异常堆栈。
+- `runtime/logs/output.log`：页面使用的蹲守日志。
+- `runtime/logs/main.log`：详细调试日志，提交问题前先脱敏。
 
-1. **登录超时问题**：看到“登录超时”的提示时，请先打开 [AutoDL.com](https://www.autodl.com)
-   官网登录一下账号，然后返回点击“确定”即可。由于此工具调用的接口有一部分属于非公开的后台
-   API，所以需要通过登录账号来激活这些接口的访问权限。
-2. **请保管好你的密码**：无论是开发者 Token、还是邮箱的发信密码，请先确保本机安全可靠后再填写！同时，你还可以通过新建
-   Token、使用单独 SMTP 密码等方式增加安全性。
-3. **盯好已开机的实例**：此工具帮你快速创建 GPU 主机的实例，甚至还帮你设置了自动关机时间。但有些情况下还是会因为持续开机扣费而造成损失，所以请盯好已经开机的实例以防止没必要的浪费！
-4. **注意这个选项**：“守到后将 Hunter 关机”的选项主要用于自动关闭在云端以容器方式运行的 GPU Hunter
-   实例。如果需要在本地机器使用，请注意保存你在该机器上未完成的工作，防止机器被程序自动关闭而造成损失。
+## 验证范围
 
-<p align="right">(<a href="#readme-top">⬆️ TOP</a>)</p>
+截至 **2026-11-10**，在 Windows / Python 3.11 环境中完成：
 
+- 本地安装、启动、停止，以及首页、配置接口和表单加载验证。
+- 使用有效网页登录凭据查询地区、GPU 和普通实例列表。
+- 基础镜像、私有镜像、社区镜像查询及所选镜像解析。
+- 13 项自动化回归测试，覆盖登录保存/失败/退出、错误信息脱敏、镜像 UUID 与创建参数映射等行为。
 
-<a name="roadmap"></a>
+**尚未进行真实付费创建、克隆、定时关机或邮件发送的端到端验证。** 创建参数通过模拟请求验证。项目依赖 AutoDL 网页接口，接口和返回格式可能变化，不保证持续兼容或一定能抢到库存。
 
-## 路线图 (Roadmap)
+测试命令（使用模拟请求，不租用 GPU）：
 
-- [x] 确认可行性，测试和封装 AutoDL.com 的接口
-- [x] 实现命令行版的蹲守功能
-- [x] 实现 UI 界面 (设置显卡型号、地区、启动镜像，一键蹲守)
-- [x] 实现必要的支持性功能 (克隆现有实例、定时关机、邮件通知等)
-- [ ] 持续修复问题
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py" -v
+```
 
-如果你有更多的需求或想法，欢迎提出 [功能需求](https://github.com/mfznttkx/autodl-gpuhunter/issues)
-或 [PR](https://github.com/mfznttkx/autodl-gpuhunter/pulls)！谢谢！
+## 项目结构
 
-<p align="right">(<a href="#readme-top">⬆️ TOP</a>)</p>
+```text
+app.py                       Gradio 页面与操作回调
+main.py                      运行目录、日志与命令行入口
+gpuhunter/autodl_client.py    AutoDL 请求、镜像解析与实例操作
+gpuhunter/commands/wait.py    库存扫描与创建流程
+gpuhunter/data_object.py      本地配置与地区数据
+requirements-local.txt       兼容依赖约束
+requirements-local.lock.txt  已验证环境的版本快照
+start-local.cmd              Windows 一键启动
+stop-local.cmd               Windows 一键停止
+local-server.ps1             Windows 后台服务管理
+tests/                       无需账号的回归测试
+runtime/                     本地配置、状态与日志，不提交到 Git
+```
 
+更多 Windows 操作说明见 [LOCAL-SETUP.md](LOCAL-SETUP.md)。历史界面图片保留在 `docs/screenshots/`，其登录方式与当前版本不同，以本 README 为准。
 
-<a name="acknowledgments"></a>
+## 上游与许可证
 
-## 致谢 (Acknowledgments)
+基于 [ansatzia/autodl-gpuhunter](https://github.com/ansatzia/autodl-gpuhunter) 整理与修复，原项目作者为 [mfznttkx](https://github.com/mfznttkx/autodl-gpuhunter)。保留上游提交历史和版权声明。
 
-* [AutoDL.com](https://www.autodl.com/): AI算力云，弹性、好用、省钱
-* [Gradio](https://github.com/gradio-app/gradio): Build and share delightful machine learning apps, all in Python
-* [requests](https://github.com/psf/requests): An elegant and simple HTTP library for Python
-* [retry](https://github.com/invl/retry): Easy to use retry decorator in python
-
-<p align="right">(<a href="#readme-top">⬆️ TOP</a>)</p>
+采用 [MIT License](LICENSE)。工具本身开源，AutoDL 云资源按平台规则收费。本项目为第三方工具，非 AutoDL 官方产品。

@@ -2,8 +2,6 @@ import datetime
 import time
 
 import requests
-from requests import RequestException
-from retry import retry
 
 from gpuhunter.utils.helpers import url_set_params
 from main import logger
@@ -12,12 +10,20 @@ INSTANCE_RUNNING_STATUSES = ["creating", "starting", "running", "re_initializing
 
 
 class FailedError(Exception):
-    pass
+    def __init__(self, message, code=None):
+        super().__init__(message)
+        self.code = code
+
+
+WEB_AUTH_MESSAGE = (
+    "普通实例的网页登录凭据无效或已过期。请登录 AutoDL 官网，"
+    "重新复制请求头 Authorization 的值并在这里验证。开发者 Token 不能用于当前普通实例接口。"
+)
 
 
 class AutodlClient:
     def __init__(self, **kwargs):
-        self.api_host = "https://api.autodl.com"
+        self.api_host = "https://www.autodl.com"
         self.backend_host = "https://fe-config-backend.autodl.com"
         self.token = None
         self.__dict__.update(kwargs)
@@ -27,13 +33,13 @@ class AutodlClient:
         from gpuhunter.data_object import Config
         config = Config()
         config.load()
-        self.token = config.token
+        self.token = config.web_token.strip()
 
-    def create_instance(self, machine_id, image, instance_name="",
+    def create_instance(self, machine_id, image="", instance_name="",
                         private_image_uuid="", reproduction_uuid="", reproduction_id=0,
                         req_gpu_amount=1, expand_data_disk=0,
                         clone_instance_uuid=None, copy_data_disk_after_clone=False,
-                        keep_src_user_service_address_after_clone=True,
+                        keep_src_user_service_address_after_clone=True, base_image_uuid="",
                         **kwargs):
         """
         :param machine_id: "463e49a218"
@@ -55,7 +61,7 @@ class AutodlClient:
                 "machine_id": machine_id,
                 "charge_type": "payg",
                 "req_gpu_amount": req_gpu_amount,
-                "image": image,
+                "base_image_uuid": base_image_uuid,
                 "private_image_uuid": private_image_uuid,
                 "reproduction_uuid": reproduction_uuid,
                 "instance_name": instance_name,
@@ -72,6 +78,8 @@ class AutodlClient:
             },
             **kwargs,
         }
+        if image:
+            body["instance_info"]["image"] = image
         if clone_instance_uuid:
             api = "/api/v1/order/instance/clone/payg"
             body["instance_uuid"] = clone_instance_uuid
@@ -141,7 +149,7 @@ class AutodlClient:
         params = {
             **kwargs,
         }
-        return self.request(api, params=params, method="GET")
+        return self.request(api, body=params)
 
     def get_shared_images(self, reproduction_uuid="", **kwargs):
         """
@@ -176,7 +184,7 @@ class AutodlClient:
             "reproduction_uuid": reproduction_uuid,
             **kwargs,
         }
-        return self.request(api, params=params, method="GET")
+        return self.request(api, body=params)
 
     def get_shared_image_detail(self, image_uuid, image_version, image_id, **kwargs):
         """
@@ -204,51 +212,17 @@ class AutodlClient:
         return self.request(api, params=params, method="GET")
 
     def get_base_images(self, **kwargs):
+        """Return enabled base images from the current flat catalog.
+
+        Each item contains uuid, framework_name, framework_version,
+        python_version, cuda_version, chip_corp and cpu_arch.
         """
-        :return: [
-          {
-            "sort": 20,
-            "label": "PyTorch",
-            "label_name": "PyTorch",
-            "image_uuid": "",
-            "children": [
-              {
-                "sort": 2010,
-                "label": "1.1.0",
-                "label_name": "1.1.0",
-                "image_uuid": "",
-                "children": [
-                  {
-                    "sort": 201010,
-                    "label": "3.7(ubuntu18.04)",
-                    "label_name": "3.7(ubuntu18.04)",
-                    "image_uuid": "",
-                    "children": [
-                      {
-                        "sort": 20101010,
-                        "label": "10.0",
-                        "label_name": {
-                          "i": "hub.kce.ksyun.com/autodl-image/torch:cuda10.0-cudnn7-devel-ubuntu18.04-py37-torch1.1.0",
-                          "uuid": "base-image-0x7zgbw1ji",
-                          "v": "10.0"
-                        },
-                        "image_uuid": ""
-                      }
-                    ]
-                  },
-                  ...
-                ]
-              },
-              ...
-            ],
-          },
-        ]
-        """
-        api = "/api/v1/image/all"
+        api = "/api/v1/image/get"
         params = {
             **kwargs,
         }
-        return self.request(api, params=params, method="GET")
+        images = self.request(api, body=params)
+        return [image for image in images if not image.get("is_off")]
 
     def list_instance(self, status=None, **kwargs):
         """
@@ -426,8 +400,9 @@ class AutodlClient:
                 break
             time.sleep(0.2)
 
-    @retry(RequestException, 6, 5, backoff=2, logger=logger)
     def request(self, api_url, params=None, method="POST", body=None):
+        if not self.token:
+            raise FailedError("请先在本地页面填写并验证普通实例的网页登录凭据。", code="MissingWebToken")
         url = api_url if api_url.startswith("https://") else f"{self.api_host}{api_url}"
         if params:
             url = url_set_params(url, **params)
@@ -438,14 +413,25 @@ class AutodlClient:
         logger.debug(url)
         logger.debug(method)
         logger.debug(body)
-        response = requests.request(method, url, json=body, headers=headers)
-        json = response.json()
-        if json["code"] not in ["Success", "OK"]:
-            logger.error(json)
-            raise FailedError(json["msg"])
+        response = requests.request(method, url, json=body, headers=headers, timeout=(5, 20))
+        if response.status_code in (401, 403):
+            raise FailedError(WEB_AUTH_MESSAGE, code="AuthorizeFailed")
+        response.raise_for_status()
+        try:
+            result = response.json()
+        except ValueError:
+            raise FailedError("AutoDL 返回了非 JSON 响应，请稍后重试。") from None
+        if not isinstance(result, dict):
+            raise FailedError("AutoDL 返回格式异常，请稍后重试。")
+        if result.get("code") not in ["Success", "OK"]:
+            code = result.get("code")
+            if code == "AuthorizeFailed":
+                raise FailedError(WEB_AUTH_MESSAGE, code=code)
+            message = str(result.get("msg") or "AutoDL 请求失败").replace(self.token, "[凭据已隐藏]")
+            logger.error("AutoDL request failed: %s", code)
+            raise FailedError(message, code=code)
         else:
-            logger.debug(json["data"])
-            return json["data"]
+            return result["data"]
 
 
 def get_default_client():
@@ -467,11 +453,12 @@ def get_available_machines(region_sign_list, gpu_type_name, gpu_idle_num=1, coun
 
 
 def get_running_instances(region_names=None, gpu_type_names=None, image=None, private_image_uuid=None,
-                          reproduction_uuid=None, reproduction_id=None):
+                          reproduction_uuid=None, reproduction_id=None, base_image_uuid=None):
     def match(inst):
         return (region_names is None or inst["region_name"] in region_names) \
             and (gpu_type_names is None or inst["snapshot_gpu_alias_name"] in gpu_type_names) \
             and (image is None or inst["image"] == image) \
+            and (not base_image_uuid or inst.get("base_image_uuid") == base_image_uuid) \
             and (private_image_uuid is None or inst["private_image_uuid"] == private_image_uuid) \
             and (reproduction_uuid is None or inst["reproduction_uuid"] == reproduction_uuid) \
             and (reproduction_id is None or inst["reproduction_id"] == reproduction_id)
@@ -485,27 +472,24 @@ def get_running_instances(region_names=None, gpu_type_names=None, image=None, pr
 
 def resolve_image_info(base_image_labels=None, shared_image_keyword=None,
                        shared_image_username_keyword=None, shared_image_version=None,
-                       private_image_uuid=None, private_image_name=None):
-    def search_base_image(items, label_index=0):
-        """
-        :return: "hub.kce.ksyun.com/autodl-image/tensorflow:cuda11.x-py38-tf1.15.5"
-        """
-        if item := next((i for i in items if i["label"] == base_image_labels[label_index]), None):
-            if isinstance(item["label_name"], dict):
-                return item["label_name"]["i"]
-            else:
-                return search_base_image(item["children"], label_index + 1)
-        else:
-            raise ValueError(f"Image label not found: {base_image_labels[label_index]!r} in items {items!r}")
-
+                       private_image_uuid=None, private_image_name=None, base_image_uuid=None):
     image_info = {
         "image": "",
+        "base_image_uuid": "",
         "private_image_uuid": "",
         "reproduction_uuid": "",
         "reproduction_id": 0,
     }
-    if base_image_labels:
-        image_info["image"] = search_base_image(autodl_client.get_base_images())
+    if base_image_uuid or base_image_labels:
+        fields = ("framework_name", "framework_version", "python_version", "cuda_version")
+        images = autodl_client.get_base_images()
+        matches = [image for image in images if (
+            image["uuid"] == base_image_uuid if base_image_uuid else
+            [image.get(field, "") for field in fields] == list(base_image_labels)
+        )]
+        if len(matches) != 1:
+            raise FailedError("所选基础镜像已下架或无法唯一确定，请在页面重新选择基础镜像。")
+        image_info["base_image_uuid"] = matches[0]["uuid"]
     elif shared_image_keyword:
         filtered_image = [i for i in autodl_client.get_shared_images(shared_image_keyword)
                           if (not shared_image_username_keyword
@@ -537,7 +521,7 @@ def resolve_image_info(base_image_labels=None, shared_image_keyword=None,
         private_image = filtered_image[0]
         image_info = {
             **image_info,
-            "image": private_image["read_layer_image_name"],
+            "image": private_image.get("read_layer_image_name", ""),
             "private_image_uuid": private_image["image_uuid"],
         }
     else:

@@ -7,8 +7,9 @@ from datetime import datetime
 from pathlib import Path
 
 import gradio as gr
+from requests import RequestException
 
-from gpuhunter.autodl_client import FailedError, autodl_client
+from gpuhunter.autodl_client import AutodlClient, FailedError, autodl_client
 from gpuhunter.data_object import RegionList, Config
 from gpuhunter.utils.helpers import json_dumps, validate_email
 from main import LOGS_DIR, logger, DATA_DIR
@@ -29,17 +30,29 @@ with gr.Blocks(title="AutoDL GPU Hunter", theme=gr.themes.Default(text_size="lg"
     )
 
     with gr.Group(visible=False) as gr_token_input_group:
+        gr.Markdown("### 普通容器实例登录\n请使用已登录官网的**网页登录凭据**。开发者 Token 不适用于当前普通实例接口。")
         gr_token_input = gr.Textbox(
-            label="开发者 Token",
-            lines=2,
-            info="本 Token 以明文 JSON 格式保存在运行本程序的服务器上，"
-                 "切勿在不信任的服务器上填写你的 Token，否则会被人盗用账号而造成意外损失！",
-            placeholder="获取方法：进入 AutoDL 网站 / 控制台 / 账号 / 设置 / 开发者 Token"
+            label="网页登录凭据（Authorization）",
+            type="password",
+            lines=1,
+            info="仅保存在本机 runtime/data/config.json。请勿把凭据发到聊天、截图或公开仓库。",
+            placeholder="粘贴官网请求头中 Authorization 的值"
         )
-        gr_token_save_button = gr.Button("确定", variant="primary", size="lg")
+        with gr.Accordion("如何获取网页登录凭据", open=True):
+            gr.Markdown("""
+1. 在浏览器登录 [AutoDL 官网控制台](https://www.autodl.com/console/instance/list)。
+2. 按 **F12**（或 **Ctrl+Shift+I**），打开 **Network / 网络**，选择 **Fetch/XHR** 后刷新页面。
+3. 选中请求地址为 `https://www.autodl.com/api/v1/instance` 的请求；也可选其他已成功的普通实例接口请求。
+4. 在 **Headers / 标头 → Request Headers / 请求标头** 中，复制 **Authorization 的值**，粘贴到上方。
+
+如果没找到请求头，可在 **Application / 应用 → Local Storage / 本地存储 → https://www.autodl.com** 中找到 `token`，复制其 Value。
+
+验证按钮只查询地区、GPU 和实例列表。选择显卡和镜像后点击“开始蹲守”，才会尝试创建付费实例。网页登录凭据过期后需重新获取。
+""")
+        gr_token_save_button = gr.Button("验证并保存网页登录凭据", variant="primary", size="lg")
 
     with gr.Group(visible=False) as gr_token_view_group:
-        gr_token_view_input = gr.Textbox(label="开发者 Token", lines=1, interactive=False)
+        gr_token_view_input = gr.Textbox(label="普通实例登录状态", lines=1, interactive=False)
         gr_token_clear_button = gr.Button("退出", variant="secondary", size="sm")
 
     gr_token_input_error = gr.Markdown(elem_classes=["error-message"], visible=False)
@@ -176,14 +189,14 @@ with gr.Blocks(title="AutoDL GPU Hunter", theme=gr.themes.Default(text_size="lg"
             }
 
 
-        def load_image_options(image_category):
+        def _load_image_options(image_category):
             image_option_groups = {
                 gr_base_image_group: gr.Group(visible=False),
                 gr_shared_image_group: gr.Group(visible=False),
                 gr_private_image_group: gr.Group(visible=False),
-                gr_base_image: gr.Dropdown(),
-                gr_shared_image: gr.Dropdown(),
-                gr_private_image: gr.Dropdown(),
+                gr_base_image: gr.Dropdown(choices=[], value=None),
+                gr_shared_image: gr.Dropdown(choices=[], value=None),
+                gr_private_image: gr.Dropdown(choices=[], value=None),
             }
             if image_category == "base":
                 base_images = autodl_client.get_base_images()
@@ -192,12 +205,13 @@ with gr.Blocks(title="AutoDL GPU Hunter", theme=gr.themes.Default(text_size="lg"
                     gr_base_image_group: gr.Group(visible=True),
                     gr_base_image: gr.Dropdown(
                         choices=[
-                            (f'{f["label"]} / {fv["label"]} / {p["label"]} / {c["label"]}',
-                             json_dumps({"base_image_labels": [f["label"], fv["label"], p["label"], c["label"]]}))
-                            for f in base_images
-                            for fv in f["children"]
-                            for p in fv["children"]
-                            for c in p["children"]
+                            (" / ".join([
+                                image["framework_name"], image["framework_version"],
+                                image["python_version"], f'CUDA/运行时 {image["cuda_version"]}',
+                                image.get("chip_corp", ""), image.get("cpu_arch", ""),
+                            ]) + (" / 桌面版" if image.get("is_desktop") else ""),
+                             json_dumps({"base_image_uuid": image["uuid"]}))
+                            for image in base_images
                         ],
                         allow_custom_value=False,
                     )
@@ -226,6 +240,15 @@ with gr.Blocks(title="AutoDL GPU Hunter", theme=gr.themes.Default(text_size="lg"
                 }
             else:
                 return image_option_groups
+
+
+        def load_image_options(image_category):
+            try:
+                return _load_image_options(image_category)
+            except FailedError as error:
+                raise gr.Error(str(error)) from None
+            except RequestException:
+                raise gr.Error("镜像列表加载失败，请检查网络后重新选择镜像类型。") from None
 
 
         def load_shared_image_options(shared_image_search):
@@ -419,6 +442,7 @@ with gr.Blocks(title="AutoDL GPU Hunter", theme=gr.themes.Default(text_size="lg"
 
                 config.image_category = image_category
                 config.base_image_labels = []
+                config.base_image_uuid = ""
                 config.shared_image_keyword = ""
                 config.shared_image_username_keyword = ""
                 config.shared_image_version = ""
@@ -473,23 +497,35 @@ with gr.Blocks(title="AutoDL GPU Hunter", theme=gr.themes.Default(text_size="lg"
                 Path(os.path.join(DATA_DIR, "running.state")).touch()
                 # 重新开启输出日志
                 output_log_file = os.path.join(LOGS_DIR, "output.log")
-                shutil.copy(output_log_file, f'{output_log_file}.{datetime.now().strftime("%Y-%m-%d_%H:%M:%S_%f")}')
+                shutil.copy(output_log_file, f'{output_log_file}.{datetime.now().strftime("%Y-%m-%d_%H-%M-%S_%f")}')
                 with open(output_log_file, "w") as f:
                     f.truncate()
                     f.close()
-                while True:
-                    from gpuhunter.commands.wait import try_to_create_instances
-                    if not try_to_create_instances():
-                        # 否则等待指定时间后重试
+                running_file = Path(os.path.join(DATA_DIR, "running.state"))
+                error_message = ""
+                try:
+                    while running_file.exists():
+                        from gpuhunter.commands.wait import try_to_create_instances
+                        if try_to_create_instances():
+                            break
                         logger.info(
                             f"等待 {config.retry_interval_seconds!r} 秒后重新扫描..."
                             f" Next scanning will start after {config.retry_interval_seconds!r} seconds..."
                         )
                         yield outputs
                         time.sleep(config.retry_interval_seconds)
-                    else:
-                        break
-                yield outputs
+                except FailedError as e:
+                    error_message = str(e)
+                except RequestException:
+                    error_message = "AutoDL 网络请求失败，已停止蹲守。请先在官网确认实例状态，再重新开始。"
+                finally:
+                    running_file.unlink(missing_ok=True)
+                yield {
+                    gr_hunting_start_button: gr.Button(visible=True),
+                    gr_hunting_stop_button: gr.Button(visible=False),
+                    gr_hunting_error: gr.Markdown(visible=bool(error_message), value=error_message),
+                    gr_hunting_logs: gr.Textbox(visible=True),
+                }
             else:
                 yield {
                     gr_hunting_start_button: gr.Button(visible=True),
@@ -566,7 +602,12 @@ with gr.Blocks(title="AutoDL GPU Hunter", theme=gr.themes.Default(text_size="lg"
             show_progress="hidden"
         )
         gr_is_token_ready.change(update_clone_instances_accordion, [gr_clone_instances], [gr_clone_instances_accordion])
-        gr_is_token_ready.change(load_clone_instances_options, None, [gr_clone_instances])
+        gr_is_token_ready.change(
+            lambda ready: load_clone_instances_options() if ready else {
+                gr_clone_instances: gr.Dropdown(choices=[], value=[], multiselect=True)
+            },
+            [gr_is_token_ready], [gr_clone_instances]
+        )
 
         # 定时关机
         gr_is_token_ready.change(update_shutdown_time_accordion, [gr_shutdown_time_type], [gr_shutdown_time_accordion])
@@ -712,30 +753,35 @@ with gr.Blocks(title="AutoDL GPU Hunter", theme=gr.themes.Default(text_size="lg"
         gr_is_token_ready.change(load_stat, outputs=[gr_gpu_checkbox_group, gr_gpu_region_matrix, gr_stat_note])
 
 
-    def load_config(config=None):
+    def login_error(message):
+        return {
+            gr_is_token_ready: gr.Radio(value=False),
+            gr_token_input_group: gr.Group(visible=True),
+            gr_token_view_group: gr.Group(visible=False),
+            gr_token_input: gr.Textbox(value=""),
+            gr_token_input_error: gr.Markdown(visible=bool(message), value=message),
+            gr_config_tab: gr.Tab(visible=False),
+            gr_stat_tab: gr.Tab(visible=False),
+        }
+
+
+    def load_config(config=None, region_list=None):
         if config is None:
             config = Config().load()
-        if config.token:
+        if config.web_token:
             try:
-                RegionList().update()
+                if region_list is None:
+                    RegionList().update()
             except FailedError as e:
-                error_message = str(e)
-                if "登录失败，请重试" in error_message:
-                    error_message = "登录失败，请检查 Token 后重试。"
-                elif "登陆超时" in error_message:
-                    error_message = "登录超时，请先打开 AutoDL.com 官网登录一下账号，然后返回并点击确定。"
-                return {
-                    gr_is_token_ready: gr.Radio(value=False),
-                    gr_token_input_group: gr.Group(visible=True),
-                    gr_token_view_group: gr.Group(visible=False),
-                    gr_token_input: gr.Textbox(value=config.token),
-                    gr_token_input_error: gr.Markdown(visible=True, value=error_message),
-                }
+                return login_error(str(e))
+            except RequestException:
+                return login_error("无法连接 AutoDL，请检查网络或代理后重试。")
             return {
                 gr_is_token_ready: gr.Radio(value=True),
                 gr_token_input_group: gr.Group(visible=False),
                 gr_token_view_group: gr.Group(visible=True),
-                gr_token_view_input: config.token[:6] + "******" + config.token[-6:],
+                gr_token_input: gr.Textbox(value=""),
+                gr_token_view_input: "普通实例网页登录已验证",
                 gr_config_tab: gr.Tab(visible=True),
                 gr_stat_tab: gr.Tab(visible=True),
                 gr_token_input_error: gr.Markdown(visible=False),
@@ -747,7 +793,7 @@ with gr.Blocks(title="AutoDL GPU Hunter", theme=gr.themes.Default(text_size="lg"
                 gr_image_category: gr.Radio(value=config.image_category),
 
                 gr_base_image: gr.Dropdown(
-                    value=json_dumps({
+                    value=json_dumps({"base_image_uuid": config.base_image_uuid}) if config.base_image_uuid else json_dumps({
                         "base_image_labels": config.base_image_labels,
                     }) if config.base_image_labels else None,
                     allow_custom_value=True,
@@ -788,25 +834,44 @@ with gr.Blocks(title="AutoDL GPU Hunter", theme=gr.themes.Default(text_size="lg"
                 gr_shutdown_hunter_after_success: gr.Radio(value=config.shutdown_hunter_after_finished),
             }
         else:
-            return {
-                gr_token_input_group: gr.Group(visible=True),
-                gr_token_view_group: gr.Group(visible=False),
-                gr_token_input: gr.Textbox(value=""),
-                gr_config_tab: gr.Tab(visible=False),
-                gr_stat_tab: gr.Tab(visible=False),
-            }
+            return login_error(
+                "检测到之前保存的开发者 Token。请按上方步骤填写网页登录凭据，原开发者 Token 会保留。"
+                if config.token else ""
+            )
 
 
     def save_token(token):
         config = Config().load()
-        config.token = token
+        token = token.strip()
+        if not token:
+            return login_error("请粘贴网页登录凭据。")
+        if token == config.token.strip():
+            return login_error("这与之前保存的开发者 Token 相同。请复制官网请求头中的 Authorization 值。")
+        if any(character.isspace() for character in token) or not token.isascii():
+            return login_error("凭据格式不正确。请只复制 Authorization 的值，不要包含字段名、引号、空格或换行。")
+        candidate_client = AutodlClient(token=token)
+        region_list = RegionList()
+        try:
+            region_list.fetch(client=candidate_client)
+            # Verify the ordinary-instance endpoint without creating or changing anything.
+            candidate_client.request("/api/v1/instance", body={"page_index": 1, "page_size": 1, "status": []})
+        except FailedError as e:
+            return login_error(str(e))
+        except RequestException:
+            return login_error("无法连接 AutoDL，请检查网络或代理后重试；新凭据尚未保存。")
+        config.web_token = token
         config.save()
         autodl_client.load_config()
-        return load_config(config)
+        region_list.save()
+        return load_config(config, region_list=region_list)
 
 
     def clear_token():
-        return save_token("")
+        config = Config().load()
+        config.web_token = ""
+        config.save()
+        autodl_client.load_config()
+        return login_error("")
 
 
     load_config_outputs = [
@@ -843,4 +908,4 @@ with gr.Blocks(title="AutoDL GPU Hunter", theme=gr.themes.Default(text_size="lg"
     gr_token_clear_button.click(clear_token, None, load_config_outputs)
 
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(server_name="127.0.0.1", share=False)
