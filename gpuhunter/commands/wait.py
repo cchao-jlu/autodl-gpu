@@ -3,7 +3,7 @@ import time
 from datetime import timedelta, datetime
 from smtplib import SMTPException
 
-from gpuhunter.autodl_client import FailedError
+from gpuhunter.autodl_client import FailedError, TransientReadError
 from gpuhunter.utils.helpers import end_of_day
 from main import logger
 
@@ -50,7 +50,11 @@ def try_to_create_instances():
 
     # 加载数据和配置
     config = Config().load()
-    region_list = RegionList().update()
+    try:
+        region_list = RegionList().update()
+    except TransientReadError as error:
+        logger.warning("本轮库存查询未完成（%s），跳过本轮创建，等待下一次扫描。", error.code)
+        return False
     region_sign_list = [s for r in region_list.list if r["region_name"] in config.region_names
                         for s in r["region_sign"]]
     logger.debug("hunting config: regions=%r, gpu_types=%r, instance_num=%r",

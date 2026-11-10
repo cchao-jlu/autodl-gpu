@@ -19,6 +19,9 @@ def response(code="Success", data=None, message=""):
 
 class WebAuthTests(unittest.TestCase):
     def setUp(self):
+        logger_patch = patch("gpuhunter.autodl_client.logger")
+        logger_patch.start()
+        self.addCleanup(logger_patch.stop)
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.data_patch = patch("gpuhunter.data_object.DATA_DIR", self.directory.name)

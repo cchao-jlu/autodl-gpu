@@ -15,6 +15,10 @@ class FailedError(Exception):
         self.code = code
 
 
+class TransientReadError(FailedError):
+    """A retryable, read-only inventory query exhausted its attempts."""
+
+
 WEB_AUTH_MESSAGE = (
     "普通实例的网页登录凭据无效或已过期。请登录 AutoDL 官网，"
     "重新复制请求头 Authorization 的值并在这里验证。开发者 Token 不能用于当前普通实例接口。"
@@ -309,7 +313,29 @@ class AutodlClient:
             **kwargs,
             "region_sign_list": region_sign_list,
         }
-        return self.request(api, body=body)
+        for attempt in range(3):
+            try:
+                return self.request(api, body=body)
+            except FailedError as error:
+                if error.code != "DatabaseError":
+                    raise
+                failure_code = error.code
+            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
+                failure_code = "NetworkError"
+            except requests.exceptions.HTTPError as error:
+                status = error.response.status_code if error.response is not None else None
+                if status not in (500, 502, 503, 504):
+                    raise
+                failure_code = f"HTTP{status}"
+            if attempt == 2:
+                raise TransientReadError(
+                    "GPU 库存查询暂时失败（已尝试 3 次），请稍后重试。",
+                    code=failure_code,
+                ) from None
+            delay = attempt + 1
+            logger.warning("GPU 库存查询暂时失败（%s），%s 秒后重试（%s/2）；地区：%s",
+                           failure_code, delay, attempt + 1, region_sign_list)
+            time.sleep(delay)
 
     def list_machine(self, region_sign_list, gpu_type_name, gpu_idle_num=1, **kwargs):
         """
