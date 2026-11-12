@@ -1,32 +1,43 @@
 # AutoDL GPU Hunter
 
-面向 **AutoDL 普通容器实例**的 GPU 蹲守工具。通过本地 Gradio 页面选择显卡、地区和镜像，定时查询库存，并在满足条件时尝试创建按量付费实例。
+在本机运行的 AutoDL 普通容器实例 GPU 蹲守工具。选择显卡、地区和镜像后，程序会定时查询库存，并在符合条件时尝试创建按量付费实例。
 
-本仓库在上游项目基础上修复了普通实例登录、镜像接口和 Windows 本地运行问题。**适配普通实例；未实现 Pro 实例流程。**
+> **费用提醒：**验证网页登录凭据只查询 AutoDL 资源。点击“开始蹲守”后，程序可能自动创建付费实例。停止本地程序不会关闭已经创建的云端实例，请在 AutoDL 控制台单独管理。本项目适配普通容器实例，不支持 Pro 实例流程，也不是 AutoDL 官方产品。
 
-> 点击“验证并保存网页登录凭据”只查询资源；点击“开始蹲守”后可能自动创建付费实例。关闭浏览器或停止本地工具，不会关闭已创建的云端实例。
+[快速开始](#快速开始) · [登录配置](#登录配置) · [开始蹲守](#开始蹲守) · [常见问题](#常见问题) · [提交问题](https://github.com/cchao-jlu/autodl-gpu/issues)
 
-[快速开始](#快速开始) · [登录配置](#登录配置) · [使用方法](#使用方法) · [常见问题](#常见问题) · [提交问题](https://github.com/cchao-jlu/autodl-gpu/issues)
+## 功能
 
-## 功能与修复
-
-| 项目 | 说明 |
-| --- | --- |
-| GPU 蹲守 | 按显卡型号、地区、每台 GPU 数量及目标主机数量筛选，定时查询库存 |
-| 普通实例登录 | 使用官网网页登录凭据；验证成功后保存，鉴权失败时给出明确提示 |
-| 镜像选择 | 适配基础镜像、社区镜像和我的镜像的列表接口 |
-| 基础镜像标识 | 使用镜像 UUID 解析与构造创建参数，避免旧树形镜像接口失效 |
-| Windows 启动 | 独立虚拟环境、后台启动/停止脚本、UTF-8 日志及合法备份文件名 |
-| 实例选项 | 数据盘扩容、克隆实例、定时关机和邮件通知 |
-| 本地访问 | Web 服务默认仅监听 `127.0.0.1`，不创建 Gradio 公共分享链接 |
+- 按 GPU 型号、地区、每台 GPU 数量和主机数量筛选库存。
+- 支持基础镜像、社区镜像和个人镜像。
+- 支持数据盘扩容、克隆实例、定时关机和邮件通知。
+- 服务默认只监听 `127.0.0.1`，不会创建 Gradio 公共分享链接。
+- 库存读取遇到部分临时错误时有限重试；创建请求不会自动重试，避免不确定时重复创建。
 
 ## 快速开始
 
-### 环境
+需要 Git 和 **Python 3.11**。本地运行不需要 GPU 或 CUDA。macOS 已使用 Python 3.11 验证安装、启动和登录校验；Windows 提供启动脚本；Linux 尚未实机验证。
 
-- 推荐 **Python 3.11**，本地安装不需要 GPU 或 CUDA。
-- Git，以及能够访问 GitHub、Python 包源和 AutoDL 的网络。
-- Windows 本地启动流程已验证。Linux/macOS 可按下方方式直接运行 Python，尚未在本仓库中实机验证。
+### macOS / Linux
+
+在终端执行：
+
+```bash
+git clone https://github.com/cchao-jlu/autodl-gpu.git
+cd autodl-gpu
+python3.11 -m venv .venv
+.venv/bin/python -m pip install -r requirements-local.txt
+PYTHONUTF8=1 GRADIO_ANALYTICS_ENABLED=False .venv/bin/python app.py
+```
+
+启动后打开 <http://127.0.0.1:7860>。在终端按 `Ctrl+C` 停止服务。也可以使用 `uv` 创建环境并安装依赖：
+
+```bash
+uv venv --python 3.11 .venv
+uv pip install --python .venv/bin/python -r requirements-local.txt
+```
+
+然后运行最后一条 `app.py` 启动命令。
 
 ### Windows / PowerShell
 
@@ -41,23 +52,7 @@ py -3.11 -m venv .venv
 .\start-local.cmd
 ```
 
-使用 `uv` 时，可用以下命令替代创建环境和安装依赖的步骤：
-
-```powershell
-uv venv --python 3.11 .venv
-uv pip install --python .venv\Scripts\python.exe -r requirements-local.lock.txt
-.\start-local.cmd
-```
-
-启动成功后打开 **http://127.0.0.1:7860**。之后可直接双击：
-
-| 文件 | 用途 |
-| --- | --- |
-| `start-local.cmd` | 启动后台服务并打开浏览器；已运行时复用该服务 |
-| `stop-local.cmd` | 停止由脚本启动的本地服务 |
-| `local-server.ps1` | 检查端口、管理进程并等待服务就绪 |
-
-需要在终端查看输出时，也可以直接运行：
+启动后打开 <http://127.0.0.1:7860>。之后可双击 `start-local.cmd` 启动、`stop-local.cmd` 停止后台服务。关闭浏览器不会停止服务。需要在终端查看输出时，可运行：
 
 ```powershell
 $env:PYTHONUTF8 = '1'
@@ -65,95 +60,62 @@ $env:GRADIO_ANALYTICS_ENABLED = 'False'
 .\.venv\Scripts\python.exe app.py
 ```
 
-直接运行的进程使用 `Ctrl+C` 停止。不要与后台启动脚本同时运行多个蹲守进程。
+终端启动的进程用 `Ctrl+C` 停止。不要同时启动多个蹲守进程。
 
-### Linux / macOS
-
-```bash
-git clone https://github.com/cchao-jlu/autodl-gpu.git
-cd autodl-gpu
-python3.11 -m venv .venv
-.venv/bin/python -m pip install -r requirements-local.txt
-PYTHONUTF8=1 GRADIO_ANALYTICS_ENABLED=False .venv/bin/python app.py
-```
-
-`requirements-local.lock.txt` 保存 Windows / Python 3.11 已验证环境的完整版本；`requirements-local.txt` 提供兼容约束。请勿仅安装原始 `requirements.txt`，以免旧版 Gradio 与新版间接依赖发生冲突。
+`requirements-local.txt` 为 macOS/Linux 等环境提供兼容依赖约束；`requirements-local.lock.txt` 是 Windows 与 Python 3.11 的已验证版本快照。不要只安装原始 `requirements.txt`，以免 Gradio 与间接依赖版本不兼容。
 
 ## 登录配置
 
-### 使用网页登录凭据
+普通容器实例需要 AutoDL 官网的**网页登录凭据**。开发者 Token 不能替代它。
 
-**当前普通实例接口使用网页登录凭据，开发者 Token 无法替代它。**
-
-1. 在浏览器登录 [AutoDL 控制台](https://www.autodl.com/console/instance/list)。
-2. 按 **F12** 或 **Ctrl+Shift+I** 打开开发者工具，选择 **Network / 网络 → Fetch/XHR**，刷新页面。
-3. 选中请求地址为 `https://www.autodl.com/api/v1/instance` 的请求。
-4. 打开 **Headers / 标头 → Request Headers / 请求标头**，复制 **Authorization 的完整值**。
-5. 粘贴到本地页面的“网页登录凭据”，点击 **验证并保存网页登录凭据**。
+1. 在浏览器登录 [AutoDL 容器实例控制台](https://www.autodl.com/console/instance/list)。
+2. 打开开发者工具：Mac 上的 Chrome/Edge 按 `⌘ Command + ⌥ Option + I`；Windows 按 `F12` 或 `Ctrl+Shift+I`。
+3. 选择 **Network / 网络 → Fetch/XHR**，刷新控制台页面。Mac 按 `⌘ Command + R`，Windows 按 `Ctrl+R`。如果筛选框里已有文字（例如 `auth`），先清除筛选。
+4. 找到 `https://www.autodl.com/api/v1/instance` 请求，打开 **Headers / 标头 → Request Headers / 请求标头**，复制 `Authorization` 对应的值。确认选中的是 `instance` 请求，而不是名称里含 `cloudauth` 的请求。
+5. 将该值粘贴到本地页面的“网页登录凭据”，点击“验证并保存网页登录凭据”。
 
 ![在浏览器 Network 面板找到 Authorization，并粘贴到本地工具](docs/screenshots/guide-auth.png)
 
 *凭据获取操作示意；图中使用占位符。*
 
-也可以在 **Application / 应用 → Local Storage / 本地存储 → https://www.autodl.com** 下找到 `token`，复制其 Value。只复制值，不要包含字段名、引号或整段请求。
+如果请求标头里找不到 `Authorization`，可在开发者工具的 **Application / 应用 → Storage / 存储 → Local Storage / 本地存储** 中选择 AutoDL 当前页面的站点，复制 `token` 的 **Value**。只复制值，不要带字段名、引号或整段请求内容。
 
-验证过程会查询地区、GPU 和普通实例列表。全部成功后才保存新凭据；验证失败时保留原配置。凭据过期后，需要重新登录官网并再次复制，刷新本地页面不会自动更新凭据。
+验证只读取地区、GPU 和实例列表；全部成功后才会保存凭据。验证失败会保留之前已保存的配置。凭据可能过期，届时请重新登录官网并验证新值。
 
-### 凭据保存位置
+凭据以明文保存在本机 `runtime/data/config.json`，其中还可能包含邮件设置。不要分享该文件、请求标头或含凭据的截图。`runtime/` 运行数据已加入 Git 忽略规则。
 
-配置以明文保存在本机 `runtime/data/config.json`：
-
-| 字段 | 用途 |
-| --- | --- |
-| `web_token` | 普通实例的网页登录凭据 |
-| `token` | 从旧版本保留的开发者 Token，不参与当前普通实例请求 |
-| `mail_smtp_password` | 可选的邮箱发信密码或授权码 |
-
-不要公开配置文件、请求标头或包含凭据的截图。页面“退出”只清除本地的 `web_token`，不会注销官网会话，也不会清除旧 Token 和邮件设置。`runtime/` 中的运行数据与日志已加入 Git 忽略规则。
-
-## 使用方法
+## 开始蹲守
 
 ![配置显卡、地区、GPU 数量、镜像和定时关机](docs/screenshots/guide-overview.png)
 
 *当前版本界面，使用演示数据。图中的库存和配置仅用于说明操作。*
 
-1. **选择 GPU 和地区**：勾选显卡型号与地区，指定每台 GPU 数量以及目标主机数量。
-2. **选择启动镜像**：基础镜像会显示框架、Python、CUDA/运行时及硬件架构。请按目标 GPU 和软件要求选择兼容镜像。
-3. **检查实例选项**：按需设置磁盘扩容、克隆、定时关机和邮件通知。本机运行时，“守到后将 Hunter 关机”保持“不关机”。
-4. **开始蹲守**：默认间隔为 30 秒。点击按钮后，程序会保存设置、查询符合条件的主机并尝试创建实例。
-5. **查看与停止**：页面显示蹲守日志；点击“停止”可停止后续扫描。已发出的请求可能仍在处理，请在 AutoDL 控制台确认实例状态。
+1. 选择 GPU 型号、地区、每台 GPU 数量及目标主机数量。
+2. 选择启动镜像，并确认镜像与目标 GPU、软件环境兼容。
+3. 检查扩容、克隆、邮件通知和定时关机选项；本机运行时，“守到后将 Hunter 关机”应设为“不关机”。
+4. 点击“开始蹲守”。程序会保存设置、定时查询库存，并在条件满足时尝试创建实例。开始前请再次核对主机数量和费用设置。
+5. 点击“停止”可停止后续扫描。已经发出的请求可能仍在处理，请先在 AutoDL 控制台确认实例状态，再决定是否重试。
 
 ![基础镜像选项中的框架、Python、系统、CUDA 与硬件架构说明](docs/screenshots/guide-images.png)
 
 *镜像选择示例：核对框架、Python、CUDA 与硬件架构后，再开始蹲守。*
 
-网络请求失败时，程序不会自动重发创建请求。遇到异常请先检查官网实例列表，再决定是否重新开始，避免重复租用。
+默认扫描间隔为 30 秒，可设置为 10–600 秒。工具无法保证抢到库存。停止 Hunter、关闭浏览器或关闭本机，都不会自动关停云端实例。
 
 ## 常见问题
 
-| 问题 | 处理方式 |
+| 现象 | 处理方法 |
 | --- | --- |
-| 开发者 Token 正确，仍提示登录失败 | 请使用官网请求头中的网页登录凭据，见[登录配置](#登录配置) |
-| 登录凭据过期 | 重新登录官网，重新获取 Authorization，再在本地验证 |
-| 库存查询出现 `DatabaseError` 或临时网络错误 | 库存接口最多尝试 3 次，间隔 1、2 秒；仍失败则跳过本轮，按扫描间隔继续。创建实例请求不使用此重试机制 |
-| 基础镜像出现红色“错误” | 更新代码和兼容依赖，重启服务并按 `Ctrl+F5` 刷新；当前版本已替换旧 `/image/all` 接口 |
-| `HfFolder` 导入失败，或首页出现 Gradio/FastAPI 异常 | 在独立环境中按本仓库锁定文件重新安装依赖 |
-| 7860 端口被占用 | 使用 `stop-local.cmd` 停止本工具的后台服务；若被其他程序占用，先处理该程序 |
-| 网页打开了，但不出现新功能 | 重启本地服务并强制刷新浏览器 |
-| 显卡空闲数量为 0 | 当前查询没有空闲库存；工具只能持续查询，无法保证抢到资源 |
-| 关闭浏览器后仍在运行 | 后台服务独立运行，使用 `stop-local.cmd` 停止；云端实例需在 AutoDL 控制台单独管理 |
+| 开发者 Token 提示登录失败 | 改用官网网页登录凭据，见[登录配置](#登录配置)。 |
+| Network 中找不到 `Authorization` | 确认已登录实例控制台，清除 Network 筛选并查找 `api/v1/instance`；也可检查 Local Storage 中的 `token`。 |
+| 登录凭据过期 | 重新登录 AutoDL 控制台，获取并验证新的凭据。 |
+| 库存查询出现 `DatabaseError` 或临时网络错误 | 只读库存请求最多尝试 3 次，仍失败会跳过本轮并等待下一次扫描；创建请求不自动重试。 |
+| 页面出现 Gradio/FastAPI 或 `HfFolder` 导入错误 | 在独立 `.venv` 中按对应平台的依赖文件重新安装。 |
+| 7860 端口被占用 | 先停止已有 Hunter 服务，或处理占用该端口的程序。 |
+| 显卡空闲数量为 0 | 当前查询没有符合条件的空闲库存，持续扫描也不保证一定能租到。 |
 
-后台启动日志：
+Windows 后台服务日志位于 `runtime/logs/web.stdout.log` 和 `runtime/logs/web.stderr.log`；蹲守输出和详细日志分别为 `output.log` 与 `main.log`。提交问题前请先从日志中删除凭据及其他个人信息。更多 Windows 操作说明见 [LOCAL-SETUP.md](LOCAL-SETUP.md)。
 
-- `runtime/logs/web.stdout.log`：服务标准输出。
-- `runtime/logs/web.stderr.log`：启动错误和异常堆栈。
-- `runtime/logs/output.log`：页面使用的蹲守日志。
-- `runtime/logs/main.log`：详细调试日志，提交问题前先脱敏。
+## 许可证
 
-更多 Windows 操作说明见 [LOCAL-SETUP.md](LOCAL-SETUP.md)。
-
-## 上游与许可证
-
-基于 [ansatzia/autodl-gpuhunter](https://github.com/ansatzia/autodl-gpuhunter) 整理与修复，原项目作者为 [mfznttkx](https://github.com/mfznttkx/autodl-gpuhunter)。保留上游提交历史和版权声明。
-
-采用 [MIT License](LICENSE)。工具本身开源，AutoDL 云资源按平台规则收费。本项目为第三方工具，非 AutoDL 官方产品。
+本项目基于 [ansatzia/autodl-gpuhunter](https://github.com/ansatzia/autodl-gpuhunter) 整理与修复，并保留上游提交历史和版权声明。采用 [MIT License](LICENSE)。AutoDL 云资源由平台收费，使用前请确认平台规则与费用。
