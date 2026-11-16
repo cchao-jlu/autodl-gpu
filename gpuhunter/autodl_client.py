@@ -105,6 +105,17 @@ class AutodlClient:
         }
         self.request(api, body=body)
 
+    def get_instance(self, instance_uuid):
+        """Read the original instance, including its host's current GPU availability."""
+        for instance in self.list_instance():
+            if instance.get("uuid") == instance_uuid:
+                return instance
+        raise FailedError("找不到该实例，可能已释放或当前账号无权访问。", code="InstanceNotFound")
+
+    def power_on_instance(self, instance_uuid):
+        """Submit one ordinary GPU power-on request; never retry this write here."""
+        return self.request("/api/v1/instance/power_on", body={"instance_uuid": instance_uuid})
+
     def update_instance_name(self, instance_uuid, instance_name, **kwargs):
         api = "/api/v1/instance/name"
         body = {
@@ -457,7 +468,7 @@ class AutodlClient:
             logger.error("AutoDL request failed: %s", code)
             raise FailedError(message, code=code)
         else:
-            return result["data"]
+            return result.get("data")
 
 
 def get_default_client():

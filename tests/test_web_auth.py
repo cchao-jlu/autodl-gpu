@@ -54,9 +54,12 @@ class WebAuthTests(unittest.TestCase):
             response(data=[{"RTX 4090": {"idle_gpu_num": 1, "total_gpu_num": 3}}]),
             response(data={"list": [], "max_page": 0}),
         ]
-        with patch("requests.request", side_effect=responses) as request:
+        with patch("requests.request", side_effect=responses) as request, \
+                patch.object(app.resume_monitor, "stop") as stop_resume:
             result = app.save_token("  website-session-secret  ")
+        stop_resume.assert_called_once()
         self.assertTrue(result[app.gr_is_token_ready].value)
+        self.assertTrue(result[app.gr_resume_tab].visible)
         self.assertEqual(result[app.gr_token_input].value, "")
         config = Config().load()
         self.assertEqual(config.web_token, "website-session-secret")
@@ -91,12 +94,15 @@ class WebAuthTests(unittest.TestCase):
 
     def test_logout_clears_only_web_credential(self):
         Config(token="old-developer-token", web_token="session", instance_num=2).save()
-        result = app.clear_token()
+        with patch.object(app.resume_monitor, "stop") as stop_resume:
+            result = app.clear_token()
+        stop_resume.assert_called_once()
         config = Config().load()
         self.assertEqual(config.web_token, "")
         self.assertEqual(config.token, "old-developer-token")
         self.assertEqual(config.instance_num, 2)
         self.assertFalse(result[app.gr_config_tab].visible)
+        self.assertFalse(result[app.gr_resume_tab].visible)
 
     def test_server_error_cannot_echo_credential(self):
         client = AutodlClient(token="private-session")

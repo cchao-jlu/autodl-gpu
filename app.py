@@ -11,6 +11,7 @@ from requests import RequestException
 
 from gpuhunter.autodl_client import AutodlClient, FailedError, autodl_client
 from gpuhunter.data_object import RegionList, Config
+from gpuhunter.resume_ui import build_resume_tab, resume_monitor
 from gpuhunter.utils.helpers import json_dumps, validate_email
 from main import LOGS_DIR, logger, DATA_DIR
 
@@ -688,6 +689,8 @@ with gr.Blocks(title="AutoDL GPU Hunter", theme=gr.themes.Default(text_size="lg"
         # 日志
         demo.load(read_output_logs, None, gr_hunting_logs, every=1)
 
+    gr_resume_tab = build_resume_tab(demo, gr_is_token_ready)
+
     with gr.Tab("🐰 算力实况", visible=False) as gr_stat_tab:
         gr.Markdown("## 当前 GPU 主机数量")
         gr_gpu_checkbox_group = gr.CheckboxGroup([], label="显卡型号")
@@ -761,6 +764,7 @@ with gr.Blocks(title="AutoDL GPU Hunter", theme=gr.themes.Default(text_size="lg"
             gr_token_input: gr.Textbox(value=""),
             gr_token_input_error: gr.Markdown(visible=bool(message), value=message),
             gr_config_tab: gr.Tab(visible=False),
+            gr_resume_tab: gr.Tab(visible=False),
             gr_stat_tab: gr.Tab(visible=False),
         }
 
@@ -783,6 +787,7 @@ with gr.Blocks(title="AutoDL GPU Hunter", theme=gr.themes.Default(text_size="lg"
                 gr_token_input: gr.Textbox(value=""),
                 gr_token_view_input: "普通实例网页登录已验证",
                 gr_config_tab: gr.Tab(visible=True),
+                gr_resume_tab: gr.Tab(visible=True),
                 gr_stat_tab: gr.Tab(visible=True),
                 gr_token_input_error: gr.Markdown(visible=False),
 
@@ -860,6 +865,7 @@ with gr.Blocks(title="AutoDL GPU Hunter", theme=gr.themes.Default(text_size="lg"
         except RequestException:
             return login_error("无法连接 AutoDL，请检查网络或代理后重试；新凭据尚未保存。")
         config.web_token = token
+        resume_monitor.stop()
         config.save()
         autodl_client.load_config()
         region_list.save()
@@ -867,6 +873,7 @@ with gr.Blocks(title="AutoDL GPU Hunter", theme=gr.themes.Default(text_size="lg"
 
 
     def clear_token():
+        resume_monitor.stop()
         config = Config().load()
         config.web_token = ""
         config.save()
@@ -882,6 +889,7 @@ with gr.Blocks(title="AutoDL GPU Hunter", theme=gr.themes.Default(text_size="lg"
         gr_token_view_group,
         gr_token_view_input,
         gr_config_tab,
+        gr_resume_tab,
         gr_stat_tab,
         gr_gpu_types,
         gr_regions,

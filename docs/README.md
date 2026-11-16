@@ -7,8 +7,10 @@
 - `screenshots/guide-auth.png`：网页登录凭据获取示意，使用占位符。
 - `screenshots/guide-overview.png`：当前版本的蹲守配置界面，使用演示数据。
 - `screenshots/guide-images.png`：基础镜像选项及版本、硬件架构说明。
+- `screenshots/guide-resume-config.jpg`：蹲守原实例开机的目标选择、扫描间隔、等待时限和费用确认。
+- `screenshots/guide-resume-result.jpg`：等待资源、提交开机请求、确认运行的模拟日志。
 
-界面图来自独立演示环境，不包含账号凭据，不代表实时库存或推荐配置。
+界面图来自独立演示环境，不包含账号凭据，不代表实时库存或推荐配置。蹲守开机配图使用虚构实例，复用项目实际页面和监控逻辑，开机接口使用模拟响应，未触发真实云端开机。
 
 ## 上游资源
 
