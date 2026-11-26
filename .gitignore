@@ -98,3 +98,7 @@ GitHub.sublime-settings
 runtime/data/*.json
 runtime/data/*.state
 runtime/logs/
+
+# Durable package task lock and atomic-write temporary file
+runtime/data/*.lock
+runtime/data/*.tmp

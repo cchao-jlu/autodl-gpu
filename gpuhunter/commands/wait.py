@@ -89,6 +89,7 @@ def try_to_create_instances():
     logger.debug(f"image_info: {image_info!r}")
     # 获取当前运行的实例
     instances = get_running_instances(
+        charge_type="payg",
         region_names=config.region_names,
         gpu_type_names=config.gpu_type_names,
         image=image_info["image"] or None,

@@ -12,6 +12,7 @@ from requests import RequestException
 from gpuhunter.autodl_client import AutodlClient, FailedError, autodl_client
 from gpuhunter.data_object import RegionList, Config
 from gpuhunter.resume_ui import build_resume_tab, resume_monitor
+from gpuhunter.package_ui import build_package_panel, package_monitor
 from gpuhunter.utils.helpers import json_dumps, validate_email
 from main import LOGS_DIR, logger, DATA_DIR
 
@@ -59,6 +60,8 @@ with gr.Blocks(title="AutoDL GPU Hunter", theme=gr.themes.Default(text_size="lg"
     gr_token_input_error = gr.Markdown(elem_classes=["error-message"], visible=False)
 
     with gr.Tab("🌲 开始蹲守", visible=False) as gr_config_tab:
+        gr_charge_type = gr.Radio(choices=[("按量计费", "payg"), ("包日", "daily"), ("包周", "weekly"), ("包月", "monthly")],
+                                  value="payg", label="计费方式")
         with gr.Row():
             with gr.Column():
                 with gr.Group():
@@ -151,10 +154,21 @@ with gr.Blocks(title="AutoDL GPU Hunter", theme=gr.themes.Default(text_size="lg"
                         info="成功后可以关闭运行此程序 (AutoDL GPU Hunter) 的机器，防止重复蹲守浪费资源。"
                     )
 
-        gr_hunting_start_button = gr.Button("🙈 开始蹲守", variant="primary", size="lg")
-        gr_hunting_error = gr.Markdown(elem_classes=["error-message"], visible=False)
-        gr_hunting_stop_button = gr.Button("🤚 停止", variant="stop", size="lg", visible=False)
-        gr_hunting_logs = gr.Textbox(label="🙉 正在蹲守", autoscroll=True, lines=10, visible=False)
+        with gr.Group() as gr_payg_actions:
+            gr_hunting_start_button = gr.Button("🙈 开始蹲守", variant="primary", size="lg")
+            gr_hunting_error = gr.Markdown(elem_classes=["error-message"], visible=False)
+            gr_hunting_stop_button = gr.Button("🤚 停止", variant="stop", size="lg", visible=False)
+            gr_hunting_logs = gr.Textbox(label="🙉 正在蹲守", autoscroll=True, lines=10, visible=False)
+
+        build_package_panel(demo, gr_is_token_ready, gr_charge_type, [
+            gr_gpu_types, gr_regions, gr_gpu_num, gr_instance_num, gr_image_category,
+            gr_base_image, gr_shared_image, gr_private_image, gr_scan_interval,
+        ])
+        gr_charge_type.input(
+            lambda mode: [gr.update(visible=mode == "payg") for _ in range(6)], gr_charge_type,
+            [gr_payg_actions, gr_clone_instances_accordion, gr_shutdown_time_accordion,
+             gr_expand_disk_accordion, gr_email_notify_accordion, gr_shutdown_hunter_after_success], queue=False,
+        )
 
 
         def load_region_options(gpu_type_names=None):
@@ -406,6 +420,8 @@ with gr.Blocks(title="AutoDL GPU Hunter", theme=gr.themes.Default(text_size="lg"
                           email_notify_smtp_password, email_notify_smtp_server, scan_interval,
                           shutdown_hunter_after_success):
             error_messages = []
+            if package_monitor.snapshot()[0]:
+                error_messages.append("请先停止套餐抢购。")
             if not gpu_types:
                 error_messages.append("请选择显卡型号")
             if not regions:
@@ -866,6 +882,7 @@ with gr.Blocks(title="AutoDL GPU Hunter", theme=gr.themes.Default(text_size="lg"
             return login_error("无法连接 AutoDL，请检查网络或代理后重试；新凭据尚未保存。")
         config.web_token = token
         resume_monitor.stop()
+        package_monitor.stop()
         config.save()
         autodl_client.load_config()
         region_list.save()
@@ -874,6 +891,7 @@ with gr.Blocks(title="AutoDL GPU Hunter", theme=gr.themes.Default(text_size="lg"
 
     def clear_token():
         resume_monitor.stop()
+        package_monitor.stop()
         config = Config().load()
         config.web_token = ""
         config.save()

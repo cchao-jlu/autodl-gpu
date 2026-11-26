@@ -105,6 +105,21 @@ class AutodlClient:
         }
         self.request(api, body=body)
 
+    def preview_package_price(self, price_info):
+        return self.request("/api/v1/order/price/preview", body=price_info)
+
+    def create_package_order(self, instance_info, price_info):
+        # This creates an unpaid order. Payment is a separate, non-retried write.
+        return self.request("/api/v1/order/instance/create/prepay", body={
+            "instance_info": instance_info, "price_info": price_info,
+        })
+
+    def get_order(self, order_uuid):
+        return self.request("/api/v1/order", params={"order_uuid": order_uuid}, method="GET")
+
+    def pay_package_order(self, order_uuid):
+        return self.request("/api/v1/order/pay", body={"order_uuid": order_uuid}, method="PUT")
+
     def get_instance(self, instance_uuid):
         """Read the original instance, including its host's current GPU availability."""
         for instance in self.list_instance():
@@ -490,9 +505,10 @@ def get_available_machines(region_sign_list, gpu_type_name, gpu_idle_num=1, coun
 
 
 def get_running_instances(region_names=None, gpu_type_names=None, image=None, private_image_uuid=None,
-                          reproduction_uuid=None, reproduction_id=None, base_image_uuid=None):
+                          reproduction_uuid=None, reproduction_id=None, base_image_uuid=None, charge_type=None):
     def match(inst):
         return (region_names is None or inst["region_name"] in region_names) \
+            and (charge_type is None or inst.get("charge_type") == charge_type) \
             and (gpu_type_names is None or inst["snapshot_gpu_alias_name"] in gpu_type_names) \
             and (image is None or inst["image"] == image) \
             and (not base_image_uuid or inst.get("base_image_uuid") == base_image_uuid) \

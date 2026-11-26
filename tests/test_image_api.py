@@ -69,6 +69,11 @@ class ImageApiTests(unittest.TestCase):
         with patch.object(autodl_client, "list_instance", return_value=[matching, other]):
             self.assertEqual(get_running_instances(base_image_uuid=IMAGE["uuid"]), [matching])
 
+    def test_payg_target_does_not_count_package_instances(self):
+        instances = [{"charge_type": "payg"}, {"charge_type": "daily"}, {"charge_type": "monthly"}]
+        with patch.object(autodl_client, "list_instance", return_value=instances):
+            self.assertEqual(get_running_instances(charge_type="payg"), [instances[0]])
+
     def test_image_error_provides_message(self):
         with patch.object(autodl_client, "get_base_images", side_effect=FailedError("请重新登录")):
             with self.assertRaises(app.gr.Error) as error:

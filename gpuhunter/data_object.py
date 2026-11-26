@@ -50,6 +50,7 @@ class DataObjectMixin:
 
 
 class Config(DataObjectMixin):
+    package_options = {}
     token = ""
     web_token = ""
     region_names = []
